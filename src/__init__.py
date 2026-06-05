@@ -10,7 +10,7 @@ from .utils import middlewares
 if sys.platform == 'win32':
   load_dotenv('.env')
 
-LOG_FILENAME = 'logs/all.log' if bool(int(os.getenv('DEBUG', 0))) else '/var/log/vs-auth/all.log'
+LOG_FILENAME = 'logs/all.log' if sys.platform == 'win32' else '/var/log/vs-auth/all.log'
 
 
 async def db_ctx(app: Application):
