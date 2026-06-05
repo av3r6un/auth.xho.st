@@ -1,0 +1,17 @@
+__pycache__
+.env
+.git
+.venv
+.vscode
+*.pyc
+*.pyo
+*.log
+_*.pem
+tests/
+test_*.py
+test.py
+generate_jwks.py
+docker-compose.yml
+.pre-commit-config.yml
+.style.yapf
+docker-compose.example.yml
