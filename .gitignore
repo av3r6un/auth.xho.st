@@ -9,7 +9,6 @@ wheels/
 # Virtual environments
 .venv
 .env
-_*.pem
 logs/
 tests/
 test.py

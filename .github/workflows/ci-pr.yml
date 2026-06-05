@@ -28,14 +28,13 @@ jobs:
               build: .
               environment:
                 DB_URL: sqlite+aiosqlite:////app/storage/ci.db
-                DEBUG: "1"
+                DEBUG: "0"
                 APP_PORT: "8090"
                 JWT_PRIVATE_KEY: src/config/_private.pem
                 JWT_PUBLIC_KEY: src/config/_pub.pem
                 JWT_ACCESS_TOKEN_EXPIRES: "86400"
                 JWT_REFRESH_TOKEN_EXPIRES: "2592000"
-                JWKS_PATH: /app/storage/jwks.json
-                AUTHORITY: http://127.0.0.1:8090
+                AUTHORITY: auth.xho.st
                 KID: ci-rsa-2026-06
               ports:
                 - "8090:8090"
@@ -47,8 +46,6 @@ jobs:
       - name: Start Containers
         run: docker compose -f docker-compose.ci.yml up -d
 
-
-      # Need to create health endpoint + logic
       - name: Check Health Endpoint
         shell: bash
         run: |
