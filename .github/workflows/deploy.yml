@@ -20,11 +20,13 @@ jobs:
       - name: Pack Repository
         shell: bash
         run: |
+          rm -f release.tgz
           tar \
             --exclude=.git \
             --exclude=.venv \
             --exclude=__pycache__ \
             --exclude=.github \
+            --exclude=release.tgz \
             -czf release.tgz .
 
       - name: Copy Release Bundle
