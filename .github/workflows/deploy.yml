@@ -20,14 +20,15 @@ jobs:
       - name: Pack Repository
         shell: bash
         run: |
-          rm -f release.tgz
+          archive_path="${RUNNER_TEMP}/release.tgz"
+          rm -f "${archive_path}"
           tar \
             --exclude=.git \
             --exclude=.venv \
             --exclude=__pycache__ \
             --exclude=.github \
-            --exclude=release.tgz \
-            -czf release.tgz .
+            -czf "${archive_path}" .
+          cp "${archive_path}" release.tgz
 
       - name: Copy Release Bundle
         uses: appleboy/scp-action@v0.1.7
