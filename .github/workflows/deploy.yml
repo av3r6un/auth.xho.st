@@ -27,6 +27,7 @@ jobs:
             --exclude=.venv \
             --exclude=__pycache__ \
             --exclude=.github \
+            --exclude=.env \
             -czf "${archive_path}" .
           cp "${archive_path}" release.tgz
 
@@ -53,5 +54,8 @@ jobs:
             cd "${{ secrets.DEPLOY_PATH }}"
             tar -xzf release.tgz
             rm -f release.tgz
-            docker compose --env-file "${{ secrets.DEPLOY_ENV_FILE }}" -f docker-compose.example.yml down
-            docker compose --env-file "${{ secrets.DEPLOY_ENV_FILE }}" -f docker-compose.example.yml up -d --build
+            cat > .env <<'EOF'
+            ${{ secrets.DEPLOY_ENV_FILE }}
+            EOF
+            docker compose -f docker-compose.example.yml down
+            docker compose -f docker-compose.example.yml up -d --build
