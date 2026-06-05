@@ -1,0 +1,10 @@
+services:
+  vs-auth:
+    container_name: xhost-auth
+    build: .
+    image: av3rgun/auth.voidspace.ru:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8484:${APP_PORT}"
