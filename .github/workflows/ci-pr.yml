@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
   docker-build-and-test:
@@ -87,3 +88,80 @@ jobs:
       - name: Stop Containers
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
+
+  create-and-merge-pr:
+    if: github.event_name == 'push' && github.ref != 'refs/heads/master'
+    needs: docker-build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Or Merge Pull Request
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const head = context.ref.replace('refs/heads/', '');
+            const base = 'master';
+
+            if (head === base) {
+              core.info('Branch is master, skipping auto-merge.');
+              return;
+            }
+
+            const { data: existing } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              head: `${owner}:${head}`,
+              base,
+            });
+
+            let pr = existing[0];
+
+            if (!pr) {
+              const { data: created } = await github.rest.pulls.create({
+                owner,
+                repo,
+                head,
+                base,
+                title: `Auto merge ${head} into ${base}`,
+                body: [
+                  'This pull request was created automatically by GitHub Actions after CI passed.',
+                  '',
+                  `Source branch: \`${head}\``,
+                  `Target branch: \`${base}\``,
+                ].join('\n'),
+              });
+              pr = created;
+              core.info(`Created PR #${pr.number}.`);
+            } else {
+              core.info(`Reusing PR #${pr.number}.`);
+            }
+
+            let prDetails;
+            for (let attempt = 0; attempt < 6; attempt += 1) {
+              const response = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: pr.number,
+              });
+              prDetails = response.data;
+              if (prDetails.mergeable !== null) {
+                break;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 5000));
+            }
+
+            if (!prDetails?.mergeable) {
+              core.setFailed(`PR #${pr.number} is not mergeable right now.`);
+              return;
+            }
+
+            await github.rest.pulls.merge({
+              owner,
+              repo,
+              pull_number: pr.number,
+              merge_method: 'merge',
+            });
+
+            core.info(`Merged PR #${pr.number}.`);
