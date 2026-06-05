@@ -1,0 +1,92 @@
+name: CI And PR
+
+on:
+  push:
+    branches-ignore:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+
+      - name: Prepare CI Compose Override
+        shell: bash
+        run: |
+          cat > docker-compose.ci.yml <<'YAML'
+          services:
+            vs-auth:
+              image: xhost-auth-ci:latest
+              build: .
+              environment:
+                DB_URL: sqlite+aiosqlite:////app/storage/ci.db
+                DEBUG: "1"
+                APP_PORT: "8090"
+                JWT_PRIVATE_KEY: src/config/_private.pem
+                JWT_PUBLIC_KEY: src/config/_pub.pem
+                JWT_ACCESS_TOKEN_EXPIRES: "86400"
+                JWT_REFRESH_TOKEN_EXPIRES: "2592000"
+                JWKS_PATH: /app/storage/jwks.json
+                AUTHORITY: http://127.0.0.1:8090
+                KID: ci-rsa-2026-06
+              ports:
+                - "8090:8090"
+          YAML
+
+      - name: Build Containers
+        run: docker compose -f docker-compose.ci.yml build
+
+      - name: Start Containers
+        run: docker compose -f docker-compose.ci.yml up -d
+
+
+      # Need to create health endpoint + logic
+      - name: Check Health Endpoint
+        shell: bash
+        run: |
+          set -e
+          for i in {1..30}; do
+            if curl -fsS "http://127.0.0.1:8090/health" | python -c 'import json,sys; data=json.load(sys.stdin); assert data["status"]=="success" and data["body"]["ok"] is True'; then
+              echo "Healthcheck passed"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Healthcheck failed"
+          docker compose -f docker-compose.ci.yml logs
+          exit 1
+
+      - name: Check Auth Flow And Protected Endpoint
+        shell: bash
+        run: |
+          set -e
+          EMAIL="ci-user@example.com"
+          PASSWORD="StrongTestPass123!"
+
+          REGISTER_RESPONSE="$(curl -fsS -X POST "http://127.0.0.1:8090/register" \
+            -H "Content-Type: application/json" \
+            -d "{\"data\":{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}}")"
+          echo "${REGISTER_RESPONSE}" | python -c 'import json,sys; data=json.load(sys.stdin); assert data["status"]=="success"'
+
+          LOGIN_RESPONSE="$(curl -fsS -X POST "http://127.0.0.1:8090/" \
+            -H "Content-Type: application/json" \
+            -d "{\"data\":{\"email\":\"${EMAIL}\",\"password\":\"${PASSWORD}\"}}")"
+          TOKEN="$(echo "${LOGIN_RESPONSE}" | python -c 'import json,sys; data=json.load(sys.stdin); print(data["body"]["access_token"])')"
+
+          curl -fsS -H "Authorization: Bearer ${TOKEN}" "http://127.0.0.1:8090/me" | python -c 'import json,sys; data=json.load(sys.stdin); assert data["status"]=="success"; assert data["body"]["user"]["email"]=="ci-user@example.com"'
+
+      - name: Show Logs On Failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs
+
+      - name: Stop Containers
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v

@@ -1,0 +1,54 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-over-ssh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+
+      - name: Pack Repository
+        shell: bash
+        run: |
+          tar \
+            --exclude=.git \
+            --exclude=.venv \
+            --exclude=__pycache__ \
+            --exclude=.github \
+            -czf release.tgz .
+
+      - name: Copy Release Bundle
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: release.tgz
+          target: ${{ secrets.DEPLOY_PATH }}
+
+      - name: Deploy On Server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            set -e
+            mkdir -p "${{ secrets.DEPLOY_PATH }}"
+            cd "${{ secrets.DEPLOY_PATH }}"
+            tar -xzf release.tgz
+            rm -f release.tgz
+            docker compose --env-file "${{ secrets.DEPLOY_ENV_FILE }}" -f docker-compose.example.yml down
+            docker compose --env-file "${{ secrets.DEPLOY_ENV_FILE }}" -f docker-compose.example.yml up -d --build
