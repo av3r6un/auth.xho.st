@@ -77,6 +77,7 @@ def generate_jwks() -> dict:
               'kty': 'RSA',
               'use': 'sig',
               'alg': 'RS256',
+              'kid': os.getenv("KID"),
               'n': n,
               'e': e,
           },
