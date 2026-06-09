@@ -12,4 +12,3 @@ wheels/
 logs/
 tests/
 test.py
-*.example.yml
