@@ -15,9 +15,24 @@ jobs:
   docker-build-and-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      candidate_version: ${{ steps.version.outputs.value }}
     steps:
       - name: Checkout
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+        with:
+          fetch-depth: 0
+
+      - name: Calculate Candidate Version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin master
+          current_merges="$(git rev-list --count --merges origin/master 2>/dev/null || echo 0)"
+          version="0.1.$((current_merges + 1))"
+          echo "APP_VERSION=${version}" >> "$GITHUB_ENV"
+          echo "value=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare CI Compose Override
         shell: bash
@@ -93,6 +108,9 @@ jobs:
     if: github.event_name == 'push' && github.ref != 'refs/heads/master'
     needs: docker-build-and-test
     runs-on: ubuntu-latest
+    environment: deploy
+    env:
+      APP_VERSION: ${{ needs.docker-build-and-test.outputs.candidate_version }}
     steps:
       - name: Check Automation Token
         shell: bash
@@ -135,9 +153,10 @@ jobs:
                 base,
                 title: `Auto merge ${head} into ${base}`,
                 body: [
-                  'This pull request was created automatically by GitHub Actions after CI passed.',
-                  '',
-                  `Source branch: \`${head}\``,
+                'This pull request was created automatically by GitHub Actions after CI passed.',
+                '',
+                `Candidate version: \`${process.env.APP_VERSION}\``,
+                `Source branch: \`${head}\``,
                   `Target branch: \`${base}\``,
                 ].join('\n'),
               });
