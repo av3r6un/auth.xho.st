@@ -7,3 +7,11 @@ services:
       - .env
     ports:
       - "8484:${APP_PORT}"
+    networks:
+      voidspace_net:
+        aliases:
+          - mariadb
+
+networks:
+  voidspace_net:
+    external: true
