@@ -70,6 +70,17 @@ jobs:
             printf 'APP_BUILD_TIME=%s\n' "$APP_BUILD_TIME"
             printf 'APP_GIT_SHA=%s\n' "$APP_GIT_SHA"
           } >> deployment.env
+      - name: Prepare VPS Deployment Directory
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -eu
+            mkdir -p "${{ secrets.DEPLOY_PATH }}"
+            test -w "${{ secrets.DEPLOY_PATH }}"
       - name: Copy Deployment Files
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -78,7 +89,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
           source: docker-compose.yml,deployment.env
-          target: ${{ secrets.EPLOY_PATH }}
+          target: ${{ secrets.DEPLOY_PATH }}
       - name: Pull And Start On Server
         uses: appleboy/ssh-action@v1.2.0
         env:
@@ -92,7 +103,7 @@ jobs:
           envs: DOCKERHUB_TOKEN,DOCKERHUB_USERNAME
           script: |
             set -eu
-            cd "${{ secrets.VPS_DEPLOY_PATH }}"
+            cd "${{ secrets.DEPLOY_PATH }}"
             mv deployment.env .env
             chmod 600 .env
             printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
