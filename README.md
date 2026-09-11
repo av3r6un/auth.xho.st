@@ -27,6 +27,7 @@ Simple authentication service for user registration, login, token refresh, and t
 - `POST /register` - register a new user
 - `POST /refresh` - refresh tokens
 - `POST /revoke` - revoke a refresh token
+- `POST /devices/master` - mark one of the user's devices as the master device
 - `GET /me` - get current user info
 - `GET /.well-known/jwks.json` - public keys for token verification
 - `GET /health` - health check
@@ -43,7 +44,8 @@ Simple authentication service for user registration, login, token refresh, and t
 ## Data model
 
 - `users` - account identity, password hash, roles, scopes, and status flags
-- `refresh_tokens` - stored refresh token hashes with expiration and revoke state
+- `refresh_tokens` - stored refresh token hashes with expiration, revoke state, and optional device binding
+- `devices` - registered devices and their master-device status
 
 ## Local run
 
@@ -77,10 +79,27 @@ Content-Type: application/json
 {
   "data": {
     "email": "user@example.com",
-    "password": "secret"
+    "password": "secret",
+    "device_id": "phone-unique-id",
+    "device_name": "My phone",
+    "access_token_ttl": 3600
   }
 }
 ```
+
+`device_id` is optional for backwards compatibility. `access_token_ttl` is an optional lifetime in seconds and is bounded by `JWT_ACCESS_TOKEN_MIN_EXPIRES` and `JWT_ACCESS_TOKEN_MAX_EXPIRES` (defaults: 60 seconds and 30 days). The refresh token lifetime remains controlled by the server.
+
+To mark a device as master, first log in with its `device_id`, then call:
+
+```http
+POST /devices/master
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{"data": {"device_id": "phone-unique-id", "device_name": "My phone"}}
+```
+
+Master devices use `JWT_MASTER_REFRESH_TOKEN_EXPIRES` (default: 365 days) for newly issued refresh tokens. Existing refresh tokens are not extended retroactively.
 
 Successful response returns:
 

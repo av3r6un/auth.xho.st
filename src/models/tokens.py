@@ -15,12 +15,14 @@ class RefreshToken(Base):
 
   id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
   user_uid: Mapped[str] = mapped_column(String(6), ForeignKey('users.uid'), nullable=False)
+  device_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
   token: Mapped[str] = mapped_column(String(64), nullable=False)
   expires_at: Mapped[dt] = mapped_column(DateTime, nullable=False)
   revoked: Mapped[bool] = mapped_column(Boolean, default=False)
 
-  def __init__(self, user_uid, token, expires_at, **kwargs) -> None:
+  def __init__(self, user_uid, token, expires_at, device_id=None, **kwargs) -> None:
     self.user_uid = user_uid
+    self.device_id = device_id
     self.token = hash_token(token)
     self.expires_at = expires_at
 
