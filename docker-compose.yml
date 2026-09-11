@@ -1,0 +1,9 @@
+services:
+  vs-auth:
+    container_name: xhost-auth
+    image: ${DOCKER_IMAGE}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8484:${APP_PORT}"
