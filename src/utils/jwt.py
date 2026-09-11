@@ -51,11 +51,13 @@ def decode_token(token: str, **kwargs):
   return jwt.decode(token, _get_public_key(), algorithms=[ALG], **kwargs)
 
 
-def create_token(user_uid: str, fresh: bool = True, **claims):
+def create_token(user_uid: str, fresh: bool = True, ttl: int | None = None, **claims):
   access_ttl = int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', 86400))
   refresh_ttl = int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', 2592000))
-  ttl = access_ttl if fresh else refresh_ttl
-  return _create_token(user_uid, delta(seconds=ttl), **claims)
+  lifetime = access_ttl if fresh else refresh_ttl
+  if ttl is not None:
+    lifetime = ttl
+  return _create_token(user_uid, delta(seconds=lifetime), **claims)
 
 
 def _b64url_uint(val: int) -> str:

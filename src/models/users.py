@@ -2,6 +2,7 @@ from datetime import timedelta as delta
 from datetime import timezone
 from datetime import datetime as dt
 import os
+import uuid
 
 from sqlalchemy.orm import mapped_column, Mapped
 from sqlalchemy import func, DateTime, Boolean, String, JSON
@@ -41,7 +42,7 @@ class User(Base):
   def claims(self):
     return dict(roles=self.roles, scopes=self.scopes)
 
-  async def login(self, session, email, password, **kwargs) -> dict:
+  async def login(self, session, email, password, device_id=None, device_name=None, access_token_ttl=None, token_ttl=None, expires_in=None, **kwargs) -> dict:
     if not email or not password:
       raise JSRError('invalid_payload')
 
@@ -51,11 +52,17 @@ class User(Base):
     if self.is_blocked or not self.is_active:
       raise JSRError('forbidden')
 
-    tokens = await self._create_tokens(session, self.uid)
+    tokens = await self._create_tokens(
+        session,
+        self.uid,
+        device_id=device_id or str(uuid.uuid4()),
+        device_name=device_name,
+        access_token_ttl=access_token_ttl if access_token_ttl is not None else (token_ttl if token_ttl is not None else expires_in),
+    )
     return dict(**tokens, **self.json)
 
   @classmethod
-  async def refresh(cls, session, refresh_token, **kwargs) -> dict:
+  async def refresh(cls, session, refresh_token, access_token_ttl=None, token_ttl=None, expires_in=None, **kwargs) -> dict:
     from .tokens import RefreshToken
 
     if not refresh_token:
@@ -73,23 +80,73 @@ class User(Base):
       raise JSRError('token_decode_error')
     if payload.get('sub') != token.user_uid:
       raise JSRError('unauthorized')
+    device = None
+    if token.device_id:
+      from .devices import Device
+      device = await Device.first(session, user_uid=token.user_uid, device_id=token.device_id)
+      if not device or device.revoked:
+        raise JSRError('unauthorized')
+      device.last_seen = dt.now(timezone.utc).replace(tzinfo=None)
+      await session.commit()
     user = await cls.first(session, uid=token.user_uid)
     if not user:
       raise JSRError('unauthorized')
     if user.is_blocked or not user.is_active:
       raise JSRError('forbidden')
     await RefreshToken.revoke(session, refresh_token)
-    tokens = await cls._create_tokens(session, user.uid, **user.claims)
+    tokens = await cls._create_tokens(
+        session,
+        user.uid,
+        device_id=token.device_id,
+        access_token_ttl=access_token_ttl if access_token_ttl is not None else (token_ttl if token_ttl is not None else expires_in),
+        **user.claims,
+    )
     return dict(**tokens, **user.json)
 
   @staticmethod
-  async def _create_tokens(session, user_uid, **claims) -> dict:
+  async def _create_tokens(session, user_uid, device_id=None, device_name=None, access_token_ttl=None, **claims) -> dict:
     from .tokens import RefreshToken
+    from .devices import Device
 
-    access = create_token(user_uid, fresh=True, **claims)
-    refresh = create_token(user_uid, fresh=False, **claims)
-    refresh_ttl = int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', 2592000))
+    device = None
+    if device_id:
+      device = await Device.first(session, user_uid=user_uid, device_id=device_id)
+      if not device:
+        device = Device(user_uid=user_uid, device_id=device_id, name=device_name)
+        await device.save(session)
+      elif device.revoked:
+        device.revoked = False
+        device.last_seen = dt.now(timezone.utc).replace(tzinfo=None)
+        await session.commit()
+
+    access_ttl = _access_ttl(access_token_ttl)
+
+    access = create_token(user_uid, fresh=True, ttl=access_ttl, **claims)
+    refresh_ttl = int(os.getenv('JWT_MASTER_REFRESH_TOKEN_EXPIRES', 31536000)) if device and device.is_master else int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', 2592000))
+    refresh = create_token(user_uid, fresh=False, ttl=refresh_ttl, **claims)
     expires_at = dt.now(timezone.utc).replace(tzinfo=None) + delta(seconds=refresh_ttl)
-    token = RefreshToken(user_uid, refresh, expires_at)
+    token = RefreshToken(user_uid, refresh, expires_at, device_id=device_id)
     await token.save(session)
-    return dict(access_token=access, refresh_token=refresh, expires_at=int(expires_at.replace(tzinfo=timezone.utc).timestamp()))
+    access_expires_at = dt.now(timezone.utc) + delta(seconds=access_ttl)
+    return dict(
+        access_token=access,
+        refresh_token=refresh,
+        expires_at=int(expires_at.replace(tzinfo=timezone.utc).timestamp()),
+        access_expires_at=int(access_expires_at.timestamp()),
+        device_id=device_id,
+    )
+
+
+def _access_ttl(value) -> int:
+  default = int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', 86400))
+  if value is None:
+    return default
+  try:
+    ttl = int(value)
+  except (TypeError, ValueError):
+    raise JSRError('invalid_payload', message='access_token_ttl must be an integer number of seconds.')
+  minimum = int(os.getenv('JWT_ACCESS_TOKEN_MIN_EXPIRES', 60))
+  maximum = int(os.getenv('JWT_ACCESS_TOKEN_MAX_EXPIRES', 2592000))
+  if ttl < minimum or ttl > maximum:
+    raise JSRError('invalid_payload', message=f'access_token_ttl must be between {minimum} and {maximum} seconds.')
+  return ttl

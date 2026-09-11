@@ -6,7 +6,7 @@ from aiohttp.web import json_response, RouteTableDef, FileResponse, Request
 from sqlalchemy import select
 
 from src.exceptions import JSRError
-from src.models import RefreshToken, User
+from src.models import Device, RefreshToken, User
 from src.utils import generate_jwks, decode_token
 
 auth = RouteTableDef()
@@ -98,6 +98,25 @@ async def revoke(req: Request, session: AsyncSession):
     raise
   except Exception as e:
     return json_response(**JSRError('internal', message=str(e)).json)
+
+
+@auth.post('/devices/master')
+async def set_master_device(req: Request, session: AsyncSession):
+  _, user = await require_user(req, session)
+  data = (await req.json()).get('data', {})
+  device_id = data.get('device_id')
+  if not device_id or not isinstance(device_id, str) or len(device_id) > 128:
+    raise JSRError('invalid_payload', message='device_id is required and must be at most 128 characters.')
+  device = await Device.first(session, user_uid=user.uid, device_id=device_id)
+  if not device:
+    device = Device(user_uid=user.uid, device_id=device_id, name=data.get('device_name'))
+  for other in await Device.all(session, user_uid=user.uid):
+    other.is_master = False
+  device.is_master = True
+  device.revoked = False
+  device.name = data.get('device_name', device.name)
+  await device.save(session)
+  return device.json, 'Master device set.'
 
 
 @auth.get('/.well-known/jwks.json')
