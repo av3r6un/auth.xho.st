@@ -82,14 +82,21 @@ jobs:
             mkdir -p "${{ secrets.DEPLOY_PATH }}"
             test -w "${{ secrets.DEPLOY_PATH }}"
       - name: Copy Deployment Files
-        uses: appleboy/scp-action@v0.1.7
+        uses: webfactory/ssh-agent@v0.9.1
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          source: docker-compose.yml,deployment.env
-          target: ${{ secrets.DEPLOY_PATH }}
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: Upload Deployment Files With SCP
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || 22 }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          scp -v -P "$VPS_PORT" \
+            docker-compose.yml deployment.env \
+            "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/"
       - name: Pull And Start On Server
         uses: appleboy/ssh-action@v1.2.0
         env:
