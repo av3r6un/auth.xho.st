@@ -70,6 +70,17 @@ jobs:
             printf 'APP_BUILD_TIME=%s\n' "$APP_BUILD_TIME"
             printf 'APP_GIT_SHA=%s\n' "$APP_GIT_SHA"
           } >> deployment.env
+      - name: Add VPS Host Key
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT || 22 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          ssh-keyscan -p "$VPS_PORT" -H "$VPS_HOST" >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
       - name: Prepare VPS Deployment Directory
         uses: appleboy/ssh-action@v1.2.0
         with:
