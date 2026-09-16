@@ -21,6 +21,20 @@ Simple authentication service for user registration, login, token refresh, and t
 - `bcrypt`
 - Docker
 
+## Docker image
+
+The Dockerfile uses two stages based on `python:3.14.2-slim`. The first stage
+installs production dependencies into `/app/.venv`; the final stage copies that
+environment and the application. Build tools, uv, and dependency download caches
+are excluded from the final image. The entrypoint runs Alembic migrations and
+starts the service directly with the virtual environment's Python.
+
+Rebuild and deploy the image to apply this change. Once the old image is no
+longer referenced by a container, `docker image prune -a` can remove its layers
+if no other image needs them. This command affects unused images across the
+host; it does not delete containers or volumes. Removed images must be pulled
+again if needed for a rollback.
+
 ## API
 
 - `POST /` - login

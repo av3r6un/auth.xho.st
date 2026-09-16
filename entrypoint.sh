@@ -3,6 +3,6 @@ set -e
 
 cd /app
 
-uv run alembic upgrade head
+.venv/bin/alembic upgrade head
 
-exec uv run python /app/main.py
+exec .venv/bin/python /app/main.py
