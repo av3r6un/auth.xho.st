@@ -21,6 +21,7 @@ async def require_user(req: Request, session: AsyncSession) -> tuple[dict, User]
   try:
     payload = decode_token(
         token,
+        expected_token_use='access',
         issuer=os.getenv('AUTHORITY'),
         options={'require': ['exp', 'iat', 'iss', 'sub']},
     )

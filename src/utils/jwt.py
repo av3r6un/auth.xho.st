@@ -47,8 +47,12 @@ def _create_token(user_uid: str, expired_delta: delta = delta(hours=1), **claims
   return jwt.encode(payload, _get_private_key(), algorithm=ALG, headers=dict(kid=os.getenv('KID')))
 
 
-def decode_token(token: str, **kwargs):
-  return jwt.decode(token, _get_public_key(), algorithms=[ALG], **kwargs)
+def decode_token(token: str, expected_token_use: str | None = None, **kwargs):
+  payload = jwt.decode(token, _get_public_key(), algorithms=[ALG], **kwargs)
+  if expected_token_use is not None and 'token_use' in payload:
+    if payload['token_use'] != expected_token_use:
+      raise jwt.InvalidTokenError('Invalid token_use')
+  return payload
 
 
 def create_token(user_uid: str, fresh: bool = True, ttl: int | None = None, **claims):
@@ -57,6 +61,7 @@ def create_token(user_uid: str, fresh: bool = True, ttl: int | None = None, **cl
   lifetime = access_ttl if fresh else refresh_ttl
   if ttl is not None:
     lifetime = ttl
+  claims['token_use'] = 'access' if fresh else 'refresh'
   return _create_token(user_uid, delta(seconds=lifetime), **claims)
 
 

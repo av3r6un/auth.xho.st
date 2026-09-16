@@ -76,7 +76,12 @@ class User(Base):
     if token.expires_at < dt.now(timezone.utc).replace(tzinfo=None):
       raise JSRError('token_expired')
     try:
-      payload = decode_token(refresh_token)
+      payload = decode_token(
+          refresh_token,
+          expected_token_use='refresh',
+          issuer=os.getenv('AUTHORITY'),
+          options={'require': ['exp', 'iat', 'iss', 'sub']},
+      )
     except Exception:
       raise JSRError('token_decode_error')
     if payload.get('sub') != token.user_uid:
