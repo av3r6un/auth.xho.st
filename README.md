@@ -41,6 +41,13 @@ Simple authentication service for user registration, login, token refresh, and t
 5. Use the refresh token to get a new token pair when needed.
 6. Revoke the refresh token to end its validity.
 
+New JWTs contain a signed `token_use` claim: `access` for access tokens and
+`refresh` for refresh tokens. Auth keeps this claim optional for backwards
+compatibility: legacy tokens without it remain accepted. If the claim is present,
+authenticated endpoints require `access`, and `/refresh` requires `refresh` in
+addition to the existing database checks for expiration, revocation and device binding.
+Registry requires `token_use: "access"` and rejects legacy tokens without the claim.
+
 ## Data model
 
 - `users` - account identity, password hash, roles, scopes, and status flags
@@ -68,7 +75,54 @@ The service runs on port `8090` by default.
 
 This service is meant to be used as a central auth provider. A client app or API can delegate login to this service, then trust the issued JWT access tokens.
 
-### 1. Log in against the auth server
+### 1. Register an account
+
+Create an account with the user's email address and password by sending a `POST` request to `/register`:
+
+```http
+POST /register HTTP/1.1
+Content-Type: application/json
+
+{
+  "data": {
+    "email": "user@example.com",
+    "password": "secret"
+  }
+}
+```
+
+The request body must contain a `data` object with these fields:
+
+- `email` - required account email. The service stores it in lowercase and enforces uniqueness.
+- `password` - required account password. The service stores only a password hash; the plain-text password is not persisted.
+
+On successful registration, the service generates a unique six-character user ID, assigns the default `user` role and `auth` scope, activates the account, and returns:
+
+```json
+{
+  "status": "success",
+  "body": true,
+  "message": "Your account successfully created!"
+}
+```
+
+Registration does not issue JWT tokens. After the account is created, use the same email and password with `POST /` to log in and receive an access token and refresh token.
+
+If the email is already registered, the service returns HTTP `409 Conflict`:
+
+```json
+{
+  "data": {
+    "status": "error",
+    "message": "Account already registered!"
+  },
+  "status": 409
+}
+```
+
+Malformed or incomplete registration data returns HTTP `400` with an error response. The endpoint must be called over HTTPS in production, and clients should avoid logging the password or sending it anywhere except the auth service.
+
+### 2. Log in against the auth server
 
 Send user credentials to the auth server:
 
@@ -108,13 +162,13 @@ Successful response returns:
 - `expires_at`
 - basic user info
 
-### 2. Store tokens in your project
+### 3. Store tokens in your project
 
 - Keep the access token in memory or a short-lived secure store
 - Keep the refresh token in a secure HTTP-only cookie or another protected storage
 - Do not log tokens or expose them in frontend code unless that is an intentional design choice
 
-### 3. Send the access token with protected requests
+### 4. Send the access token with protected requests
 
 Use the access token in the `Authorization` header:
 
@@ -128,7 +182,7 @@ You can call this auth service directly:
 
 Or your own backend can accept the same token and validate it locally.
 
-### 4. Verify tokens in your backend
+### 5. Verify tokens in your backend
 
 Your backend should verify:
 
@@ -156,17 +210,20 @@ ISSUER = AUTH_SERVER
 jwk_client = PyJWKClient(f"{AUTH_SERVER}/.well-known/jwks.json")
 
 def verify_access_token(token: str) -> dict:
-    signing_key = jwk_client.get_signing_key_from_jwt(token).key
-    return jwt.decode(
-        token,
-        signing_key,
-        algorithms=["RS256"],
-        issuer=ISSUER,
-        options={"require": ["exp", "iat", "iss", "sub"]},
-    )
+  signing_key = jwk_client.get_signing_key_from_jwt(token).key
+  payload = jwt.decode(
+    token,
+    signing_key,
+    algorithms=["RS256"],
+    issuer=ISSUER,
+    options={"require": ["exp", "iat", "iss", "sub"]},
+  )
+  if "token_use" in payload and payload["token_use"] != "access":
+    raise jwt.InvalidTokenError("Access token required")
+  return payload
 ```
 
-### 5. Refresh tokens when access token expires
+### 6. Refresh tokens when access token expires
 
 When the access token expires, send the refresh token to:
 
@@ -183,7 +240,7 @@ Content-Type: application/json
 
 This returns a new access token and refresh token pair.
 
-### 6. Revoke refresh tokens on logout
+### 7. Revoke refresh tokens on logout
 
 On logout, revoke the refresh token:
 
