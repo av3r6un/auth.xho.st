@@ -58,6 +58,7 @@ class User(Base):
         device_id=device_id or str(uuid.uuid4()),
         device_name=device_name,
         access_token_ttl=access_token_ttl if access_token_ttl is not None else (token_ttl if token_ttl is not None else expires_in),
+        **self.claims,
     )
     return dict(**tokens, **self.json)
 
